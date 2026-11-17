@@ -1,0 +1,604 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Network role. Admin accounts also carry AdminType.
+enum Role {
+  ADMIN
+  DISTRIBUTOR
+  OPERATOR
+  CUSTOMER
+}
+
+/// Three admin tiers. All of them currently have full admin access.
+enum AdminType {
+  DEVELOPER
+  SUPERADMIN
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum AttributeDataType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+}
+
+enum CommissionType {
+  PERCENTAGE
+  FIXED
+}
+
+model User {
+  id           String      @id @default(uuid()) @db.Uuid
+  role         Role
+  /// Set only when role is ADMIN. Enforced by users_admin_type_check.
+  adminType    AdminType?  @map("admin_type")
+  /// Immutable code for Distributor, Operator, and Customer. Null for Admin.
+  userCode     String?     @unique @map("user_code")
+  email        String
+  phone        String?
+  name         String
+  passwordHash String      @map("password_hash")
+  parentId     String?     @map("parent_id") @db.Uuid
+  status       UserStatus  @default(ACTIVE)
+  customData   Json        @default("{}") @map("custom_data")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  deletedAt    DateTime?   @map("deleted_at")
+
+  parent        User?          @relation("UserHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children      User[]         @relation("UserHierarchy")
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]     @relation("AuditActor")
+  commissionRules CommissionRule[] @relation("CommissionSubject")
+  commissionRulesCreated CommissionRule[] @relation("CommissionAuthor")
+  targetedAttributes AttributeDefinition[]
+  customerConnections Connection[] @relation("ConnectionCustomer")
+  publishedConnections Connection[] @relation("ConnectionPublisher")
+  distributorConnections Connection[] @relation("ConnectionDistributor")
+  operatorConnections Connection[] @relation("ConnectionOperator")
+  statusChanges ConnectionStatusHistory[] @relation("StatusActor")
+  customerInvoices Invoice[] @relation("InvoiceCustomer")
+  distributorInvoices Invoice[] @relation("InvoiceDistributor")
+  operatorInvoices Invoice[] @relation("InvoiceOperator")
+  recordedPayments Payment[] @relation("PaymentRecorder")
+  grantedFreePeriods FreePeriod[] @relation("FreePeriodAuthor")
+  distributorLedger CommissionLedger[] @relation("LedgerDistributor")
+  operatorLedger CommissionLedger[] @relation("LedgerOperator")
+  distributorPayouts Payout[] @relation("PayoutDistributor")
+  payoutsPaid Payout[] @relation("PayoutAuthor")
+  scopedApiKeys ApiKey[] @relation("ApiKeyScopeUser")
+  createdApiKeys ApiKey[] @relation("ApiKeyAuthor")
+  webhookEndpoints WebhookEndpoint[]
+  savedFilters SavedReportFilter[]
+  exportJobs ExportJob[]
+  integrations Integration[]
+
+  @@index([email])
+  @@index([parentId])
+  @@index([role])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// One counter per Distributor, Operator, and Customer. Prefix changes affect new codes only.
+model IdSequence {
+  role      Role     @id
+  prefix    String   @unique
+  padding   Int      @default(5)
+  nextValue Int      @default(1) @map("next_value")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("id_sequences")
+}
+
+model AttributeDefinition {
+  id              String            @id @default(uuid()) @db.Uuid
+  key             String
+  label           String
+  dataType        AttributeDataType @map("data_type")
+  options         Json?
+  required        Boolean           @default(false)
+  applicableRoles Role[]            @map("applicable_roles")
+  /// When set, the attribute applies only to this user. Otherwise it applies to applicableRoles.
+  targetUserId    String?           @map("target_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  targetUser User? @relation(fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([targetUserId])
+  @@index([deletedAt])
+  @@map("attribute_definitions")
+}
+
+model CommissionRule {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  type          CommissionType
+  value         Decimal        @db.Decimal(12, 2)
+  effectiveFrom DateTime       @default(now()) @map("effective_from")
+  createdById   String?        @map("created_by_id") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  user      User  @relation("CommissionSubject", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy User? @relation("CommissionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, effectiveFrom])
+  @@map("commission_rules")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  familyId  String    @map("family_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  ip        String?
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum ConnectionStatus {
+  PENDING_ACTIVATION
+  ACTIVE_PAID
+  ACTIVE_FREE
+  SUSPENDED
+  DISCONNECTED
+}
+
+enum ActivationType {
+  PAID
+  FREE
+}
+
+enum FreeReason {
+  INITIAL_OFFER
+  LOYALTY_OFFER
+  OTHER
+}
+
+enum InvoiceKind {
+  ACTIVATION
+  RECURRING
+}
+
+enum InvoiceStatus {
+  ISSUED
+  PARTIAL
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  OTHER
+}
+
+enum LedgerStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  DEAD
+}
+
+model Plan {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String
+  price        Decimal      @db.Decimal(12, 2)
+  billingCycle BillingCycle @map("billing_cycle")
+  taxPercent   Decimal      @default(0) @map("tax_percent") @db.Decimal(5, 2)
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  connections Connection[]
+
+  @@map("plans")
+}
+
+model Connection {
+  id             String            @id @default(uuid()) @db.Uuid
+  customerId     String            @map("customer_id") @db.Uuid
+  planId         String            @map("plan_id") @db.Uuid
+  publishedById  String            @map("published_by_id") @db.Uuid
+  distributorId  String?           @map("distributor_id") @db.Uuid
+  operatorId     String?           @map("operator_id") @db.Uuid
+  status         ConnectionStatus  @default(PENDING_ACTIVATION)
+  activationType ActivationType?   @map("activation_type")
+  freeStartDate  DateTime?         @map("free_start_date")
+  freeEndDate    DateTime?         @map("free_end_date")
+  freeReason     FreeReason?       @map("free_reason")
+  activatedAt    DateTime?         @map("activated_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  customer    User                      @relation("ConnectionCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  plan        Plan                      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  publishedBy User                      @relation("ConnectionPublisher", fields: [publishedById], references: [id], onDelete: Restrict)
+  distributor User?                     @relation("ConnectionDistributor", fields: [distributorId], references: [id], onDelete: SetNull)
+  operator    User?                     @relation("ConnectionOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  history     ConnectionStatusHistory[]
+  invoices    Invoice[]
+  freePeriods FreePeriod[]
+  ledger      CommissionLedger[]
+
+  @@index([customerId])
+  @@index([distributorId])
+  @@index([operatorId])
+  @@index([status])
+  @@index([freeEndDate])
+  @@index([status, freeEndDate])
+  @@index([createdAt])
+  @@map("connections")
+}
+
+model ConnectionStatusHistory {
+  id           String            @id @default(uuid()) @db.Uuid
+  connectionId String            @map("connection_id") @db.Uuid
+  fromStatus   ConnectionStatus? @map("from_status")
+  toStatus     ConnectionStatus  @map("to_status")
+  reason       String?
+  actorId      String?           @map("actor_id") @db.Uuid
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  actor      User?      @relation("StatusActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId, createdAt])
+  @@map("connection_status_history")
+}
+
+model FreePeriod {
+  id           String     @id @default(uuid()) @db.Uuid
+  connectionId String     @map("connection_id") @db.Uuid
+  startDate    DateTime   @map("start_date")
+  endDate      DateTime   @map("end_date")
+  durationLabel String    @map("duration_label")
+  reason       FreeReason
+  grantedById  String?    @map("granted_by_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  grantedBy  User?      @relation("FreePeriodAuthor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@index([connectionId])
+  @@index([endDate])
+  @@map("free_periods")
+}
+
+model DocumentSequence {
+  name      String @id
+  nextValue Int    @default(1) @map("next_value")
+
+  @@map("document_sequences")
+}
+
+model Invoice {
+  id            String        @id @default(uuid()) @db.Uuid
+  number        String        @unique
+  sourceKey     String?       @unique @map("source_key")
+  connectionId  String        @map("connection_id") @db.Uuid
+  customerId    String        @map("customer_id") @db.Uuid
+  distributorId String?       @map("distributor_id") @db.Uuid
+  operatorId    String?       @map("operator_id") @db.Uuid
+  kind          InvoiceKind
+  status        InvoiceStatus @default(ISSUED)
+  subtotal      Decimal       @db.Decimal(12, 2)
+  tax           Decimal       @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  amountPaid    Decimal       @default(0) @map("amount_paid") @db.Decimal(12, 2)
+  issuedAt      DateTime      @default(now()) @map("issued_at")
+  dueAt         DateTime      @map("due_at")
+  periodStart   DateTime      @map("period_start")
+  periodEnd     DateTime      @map("period_end")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  connection  Connection    @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  customer    User          @relation("InvoiceCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  distributor User?         @relation("InvoiceDistributor", fields: [distributorId], references: [id], onDelete: SetNull)
+  operator    User?         @relation("InvoiceOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  items       InvoiceItem[]
+  payments    Payment[]
+  ledger      CommissionLedger[]
+
+  @@index([customerId])
+  @@index([distributorId])
+  @@index([connectionId])
+  @@index([status, dueAt])
+  @@index([issuedAt])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  description String
+  amount      Decimal @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model Payment {
+  id           String        @id @default(uuid()) @db.Uuid
+  invoiceId    String        @map("invoice_id") @db.Uuid
+  amount       Decimal       @db.Decimal(12, 2)
+  method       PaymentMethod
+  reference    String?
+  receivedAt   DateTime      @default(now()) @map("received_at")
+  recordedById String?       @map("recorded_by_id") @db.Uuid
+  voidedAt     DateTime?     @map("voided_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  recordedBy User?   @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  ledger     CommissionLedger[]
+
+  @@index([invoiceId])
+  @@index([receivedAt])
+  @@map("payments")
+}
+
+/// Snapshot of the rule used at billing time. Rows are never deleted.
+model CommissionLedger {
+  id               String         @id @default(uuid()) @db.Uuid
+  sourceKey        String         @unique @map("source_key")
+  distributorId    String         @map("distributor_id") @db.Uuid
+  operatorId       String?        @map("operator_id") @db.Uuid
+  connectionId     String         @map("connection_id") @db.Uuid
+  invoiceId        String         @map("invoice_id") @db.Uuid
+  paymentId        String?        @map("payment_id") @db.Uuid
+  reversalOfId     String?        @map("reversal_of_id") @db.Uuid
+  baseAmount       Decimal        @map("base_amount") @db.Decimal(12, 2)
+  ruleType         CommissionType @map("rule_type")
+  ruleValue        Decimal        @map("rule_value") @db.Decimal(12, 2)
+  commissionAmount Decimal        @map("commission_amount") @db.Decimal(12, 2)
+  status           LedgerStatus   @default(PENDING)
+  payoutId         String?        @map("payout_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  distributor User        @relation("LedgerDistributor", fields: [distributorId], references: [id], onDelete: Restrict)
+  operator    User?       @relation("LedgerOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  connection  Connection  @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  payment     Payment?    @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  reversalOf  CommissionLedger? @relation("LedgerReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversals   CommissionLedger[] @relation("LedgerReversal")
+  payout      Payout?     @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
+  @@index([distributorId, status])
+  @@index([operatorId])
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@index([createdAt])
+  @@map("commission_ledger")
+}
+
+model Payout {
+  id            String   @id @default(uuid()) @db.Uuid
+  distributorId String   @map("distributor_id") @db.Uuid
+  period        String
+  total         Decimal  @db.Decimal(12, 2)
+  method        String
+  reference     String?
+  paidAt        DateTime @default(now()) @map("paid_at")
+  paidById      String?  @map("paid_by_id") @db.Uuid
+
+  distributor User               @relation("PayoutDistributor", fields: [distributorId], references: [id], onDelete: Restrict)
+  paidBy      User?              @relation("PayoutAuthor", fields: [paidById], references: [id], onDelete: SetNull)
+  entries     CommissionLedger[]
+
+  @@index([distributorId, period])
+  @@map("payouts")
+}
+
+model ApiKey {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  keyPrefix          String    @map("key_prefix")
+  keyHash            String    @unique @map("key_hash")
+  scopes             String[]
+  ipAllowlist        String[]  @default([]) @map("ip_allowlist")
+  rateLimitPerMinute Int       @default(60) @map("rate_limit_per_minute")
+  expiresAt          DateTime? @map("expires_at")
+  revokedAt          DateTime? @map("revoked_at")
+  scopeUserId        String    @map("scope_user_id") @db.Uuid
+  createdById        String?   @map("created_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  scopeUser User  @relation("ApiKeyScopeUser", fields: [scopeUserId], references: [id], onDelete: Restrict)
+  createdBy User? @relation("ApiKeyAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  usage     ApiUsageLog[]
+
+  @@index([scopeUserId])
+  @@map("api_keys")
+}
+
+model ApiUsageLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  apiKeyId  String   @map("api_key_id") @db.Uuid
+  method    String
+  path      String
+  status    Int
+  ms        Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt])
+  @@map("api_usage_logs")
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorKey       String   @map("actor_key")
+  method         String
+  path           String
+  idempotencyKey String   @map("idempotency_key")
+  requestHash    String   @map("request_hash")
+  statusCode     Int      @map("status_code")
+  body           Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([actorKey, method, path, idempotencyKey])
+  @@map("idempotency_records")
+}
+
+model InboundWebhookEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  provider    String
+  eventId     String    @map("event_id")
+  payload     Json
+  status      String    @default("QUEUED")
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, eventId])
+  @@map("inbound_webhook_events")
+}
+
+model WebhookEndpoint {
+  id           String    @id @default(uuid()) @db.Uuid
+  url          String
+  secretCipher String    @map("secret_cipher")
+  events       String[]
+  enabled      Boolean   @default(true)
+  failureCount Int       @default(0) @map("failure_count")
+  disabledAt   DateTime? @map("disabled_at")
+  createdById  String?   @map("created_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  createdBy  User?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries WebhookDelivery[]
+
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String         @id @default(uuid()) @db.Uuid
+  endpointId     String         @map("endpoint_id") @db.Uuid
+  eventId        String         @map("event_id")
+  eventType      String         @map("event_type")
+  payload        Json
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int            @default(0)
+  lastStatusCode Int?           @map("last_status_code")
+  lastError      String?        @map("last_error")
+  latencyMs      Int?           @map("latency_ms")
+  responseBody   String?        @map("response_body")
+  nextAttemptAt  DateTime?      @map("next_attempt_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_deliveries")
+}
+
+model Integration {
+  id           String   @id @default(uuid()) @db.Uuid
+  kind         String
+  name         String
+  configCipher String   @map("config_cipher")
+  enabled      Boolean  @default(true)
+  createdById  String?  @map("created_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("integrations")
+}
+
+model SavedReportFilter {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  report    String
+  name      String
+  query     Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, report])
+  @@map("saved_report_filters")
+}
+
+model ExportJob {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  report    String
+  format    String
+  status    String   @default("PENDING")
+  progress  Int      @default(0)
+  filePath  String?  @map("file_path")
+  error     String?
+  filters   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("export_jobs")
+}

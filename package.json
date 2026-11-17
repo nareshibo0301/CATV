@@ -1,0 +1,36 @@
+{
+  "name": "catv",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @catv/shared build && pnpm -r --parallel --filter @catv/shared --filter @catv/api --filter @catv/web dev",
+    "build": "pnpm --filter @catv/shared build && pnpm --filter @catv/api build && pnpm --filter @catv/web build",
+    "lint": "eslint .",
+    "test": "pnpm --filter @catv/api test",
+    "format": "prettier --write .",
+    "db:generate": "pnpm --filter @catv/api prisma:generate",
+    "db:migrate": "pnpm --filter @catv/api prisma:migrate",
+    "db:seed": "pnpm --filter @catv/api prisma:seed"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "argon2",
+      "esbuild",
+      "prisma",
+      "unrs-resolver"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0"
+  }
+}

@@ -1,0 +1,9 @@
+services:
+  nginx:
+    ports:
+      - "80:80"
+  api:
+    environment:
+      NODE_ENV: production
+      RUN_SEED: "false"
+      COOKIE_SECURE: "false"

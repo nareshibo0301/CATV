@@ -1,0 +1,18 @@
+---
+description: CATV admin tiers and role hierarchy
+alwaysApply: true
+---
+
+# CATV roles
+
+Roles are ADMIN, DISTRIBUTOR, OPERATOR, and CUSTOMER.
+
+ADMIN has exactly three types, stored as `adminType` (required when role is ADMIN, null otherwise):
+
+1. DEVELOPER — Developer
+2. SUPERADMIN — Super Admin
+3. ADMIN — Admin
+
+All three admin types currently have full Admin access and see the whole network. Do not invent a permission split between them until the product owner defines one.
+
+Distributors see their own subtree. Operators see their own customers. Customers see themselves. Enforce this in the shared data-scope layer.

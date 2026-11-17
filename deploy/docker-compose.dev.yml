@@ -1,0 +1,18 @@
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
+  nginx:
+    ports:
+      - "8080:80"
+  api:
+    environment:
+      NODE_ENV: development
+      RUN_SEED: "true"
+      COOKIE_SECURE: "false"
+  web:
+    environment:
+      NODE_ENV: development

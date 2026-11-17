@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: catv
+          POSTGRES_PASSWORD: change-me
+          POSTGRES_DB: catv
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U catv -d catv"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://catv:change-me@localhost:5432/catv?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-must-be-32-characters
+      JWT_REFRESH_SECRET: ci-refresh-secret-must-be-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @catv/shared build
+      - run: pnpm --filter @catv/api exec prisma generate
+      - run: pnpm --filter @catv/api test

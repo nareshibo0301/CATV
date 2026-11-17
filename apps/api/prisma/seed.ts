@@ -1,7 +1,7 @@
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import * as argon2 from 'argon2';
-import { PrismaClient, type CommissionType, type Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, type CommissionType } from '@prisma/client';
 import { ADMIN_TYPES, type AdminType } from '@catv/shared';
 
 loadEnv({ path: resolve(__dirname, '../../../deploy/.env') });

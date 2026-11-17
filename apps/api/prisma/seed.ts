@@ -34,6 +34,11 @@ async function main(): Promise<void> {
         data: { role: 'ADMIN', adminType: adminTypeRaw, email, name, passwordHash, status: 'ACTIVE' },
       });
       console.log(`Seeded ${adminTypeRaw} admin ${email}.`);
+    } else {
+      await prisma.user.update({
+        where: { id: admin.id },
+        data: { passwordHash },
+      });
     }
 
     const existingDistributor = await prisma.user.findFirst({

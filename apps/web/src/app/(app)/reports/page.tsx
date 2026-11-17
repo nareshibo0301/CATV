@@ -9,10 +9,8 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  Download,
   FileSpreadsheet,
   FileText,
-  Filter,
   Layers,
   Radio,
   Receipt,
@@ -28,7 +26,6 @@ import { DataTable, StatusBadge } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { apiFetch } from '@/lib/api';
 
 interface ReportTypeMeta {

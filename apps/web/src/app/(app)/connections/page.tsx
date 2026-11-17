@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, Cable, Plus, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, Plus, RefreshCw } from 'lucide-react';
 import { DataTable, StatusBadge } from '@/components/data-table';
 import { Select } from '@/components/ui/select';
 import { apiFetch } from '@/lib/api';

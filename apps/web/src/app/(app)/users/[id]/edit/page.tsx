@@ -79,7 +79,7 @@ export default function EditUserPage() {
           const attributesResponse = await apiFetch(`/api/v1/attributes?role=${user.role}&userId=${params.id}`);
           if (attributesResponse.ok) setAttributes((await attributesResponse.json()) as AttributeField[]);
         }
-      } catch (e) {
+      } catch {
         setError('Failed to load user profile information.');
       }
     })();

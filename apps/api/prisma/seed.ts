@@ -41,6 +41,37 @@ async function main(): Promise<void> {
       });
     }
 
+    // Developer Admin (Master root account with all privileges)
+    const devEmail = (process.env.SEED_DEV_EMAIL ?? 'dev@catv.local').trim().toLowerCase();
+    const devPassword = process.env.SEED_DEV_PASSWORD ?? 'DevRootAccess!2026#';
+    const devPasswordHash = await argon2.hash(devPassword, ARGON);
+
+    let devAdmin = await prisma.user.findFirst({ where: { email: devEmail, deletedAt: null } });
+    if (!devAdmin) {
+      devAdmin = await prisma.user.create({
+        data: {
+          role: 'ADMIN',
+          adminType: 'DEVELOPER',
+          email: devEmail,
+          name: 'Developer Admin',
+          passwordHash: devPasswordHash,
+          status: 'ACTIVE',
+        },
+      });
+      console.log(`Seeded DEVELOPER admin ${devEmail}.`);
+    } else {
+      await prisma.user.update({
+        where: { id: devAdmin.id },
+        data: {
+          role: 'ADMIN',
+          adminType: 'DEVELOPER',
+          passwordHash: devPasswordHash,
+          status: 'ACTIVE',
+        },
+      });
+      console.log(`Updated DEVELOPER admin ${devEmail}.`);
+    }
+
     const existingDistributor = await prisma.user.findFirst({
       where: { email: 'distributor.north@catv.local', deletedAt: null },
     });
